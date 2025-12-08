@@ -1,0 +1,10 @@
+# Node
+node_modules/
+.env
+
+# React (if using Vite/CRA)
+dist/
+build/
+
+# Others
+.DS_Store
