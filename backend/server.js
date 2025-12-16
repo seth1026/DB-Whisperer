@@ -40,12 +40,6 @@ const pool = new Pool({
 io.on("connection", (socket) => {
   console.log("Client connected");
 
-  if (!query || typeof query !== "string") {
-  socket.emit("error", "Invalid query");
-  return;
-}
-
-
   socket.on("runQuery", async ({ query }) => {
     try {
       if (!query || !query.trim().toUpperCase().startsWith("SELECT")) {
