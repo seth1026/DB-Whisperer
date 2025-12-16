@@ -36,6 +36,7 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
+
 /* ===================== SOCKET HANDLERS ===================== */
 io.on("connection", (socket) => {
   console.log("Client connected");
