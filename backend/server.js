@@ -8,24 +8,29 @@ const { Server } = require("socket.io");
 const { Pool } = require("pg");
 const os = require("os");
 
+/* ===================== APP SETUP ===================== */
 const app = express();
 const server = http.createServer(app);
 
-/* ===================== CORS (CRITICAL) ===================== */
-const allowedOrigins = [
+/* ===================== ALLOWED ORIGINS ===================== */
+const ALLOWED_ORIGINS = [
   "http://localhost:3000",
-  "https://your-frontend.vercel.app" // <-- replace later
+  "https://db-whisperer.vercel.app" // replace after frontend deploy
 ];
 
-app.use(cors({
-  origin: allowedOrigins,
-  credentials: true
-}));
+/* ===================== EXPRESS CORS ===================== */
+app.use(
+  cors({
+    origin: ALLOWED_ORIGINS,
+    credentials: true
+  })
+);
 
-/* ===================== SOCKET.IO ===================== */
+/* ===================== SOCKET.IO (CRITICAL FIX) ===================== */
 const io = new Server(server, {
   cors: {
-    origin: allowedOrigins,
+    origin: ALLOWED_ORIGINS,
+    methods: ["GET", "POST"],
     credentials: true
   }
 });
@@ -42,10 +47,10 @@ const pool = new Pool({
 
 /* ===================== HEALTH CHECK ===================== */
 app.get("/", (req, res) => {
-  res.send("Backend is running");
+  res.send("Backend running successfully");
 });
 
-/* ===================== REAL SYSTEM METRICS ===================== */
+/* ===================== SYSTEM METRICS ===================== */
 let lastCpuInfo = os.cpus().map(cpu => ({ ...cpu.times }));
 
 setInterval(() => {
@@ -110,12 +115,12 @@ function parsePlanToTree(plan) {
   return plan.split("\n").map(line => ({ text: line }));
 }
 
-function makeExplanation(plan, analysis, suggestions, duration) {
+function makeExplanation(plan, analysis, duration) {
   if (analysis.score > 80)
-    return "PostgreSQL used an efficient execution plan with indexes.";
+    return "PostgreSQL used an efficient execution plan.";
   if (plan.toLowerCase().includes("seq scan"))
-    return "PostgreSQL scanned the entire table, which is slow. Adding an index can help.";
-  return "Query performance can be improved with indexing.";
+    return "Sequential scan detected. Indexing may improve performance.";
+  return "Query performance can be improved.";
 }
 
 function computeIndexConfidence(plan, duration) {
@@ -126,7 +131,7 @@ function computeIndexConfidence(plan, duration) {
 
 /* ===================== SOCKET HANDLERS ===================== */
 io.on("connection", (socket) => {
-  console.log("Socket connected:", socket.id);
+  console.log("Client connected:", socket.id);
 
   socket.on("runQuery", async ({ query }) => {
     let interval;
@@ -138,7 +143,7 @@ io.on("connection", (socket) => {
         return;
       }
 
-      // Force correct schema
+      // Ensure correct schema
       await pool.query("SET search_path TO public");
 
       interval = setInterval(() => {
@@ -171,21 +176,32 @@ io.on("connection", (socket) => {
 
     } catch (err) {
       clearInterval(interval);
-      console.error("QUERY ERROR:", err);
+
+      console.error("=========== QUERY ERROR ===========");
+      console.error("Message:", err.message);
+      console.error("Code:", err.code);
+      console.error("===================================");
+
       socket.emit("error", err.message);
     }
   });
 
   socket.on("applyIndex", async ({ sql }) => {
     try {
-      const safeSql = sql
-        .replace(/^CREATE INDEX/i, "CREATE INDEX CONCURRENTLY IF NOT EXISTS");
+      const safeSql = sql.replace(
+        /^CREATE INDEX/i,
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS"
+      );
       await pool.query(safeSql);
       socket.emit("indexCreated", { message: "Index created successfully" });
     } catch (err) {
-      console.error("INDEX ERROR:", err);
+      console.error("INDEX ERROR:", err.message);
       socket.emit("error", err.message);
     }
+  });
+
+  socket.on("disconnect", () => {
+    console.log("Client disconnected:", socket.id);
   });
 });
 
