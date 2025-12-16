@@ -6,6 +6,9 @@ const { Server } = require("socket.io");
 const { Pool } = require("pg");
 
 const app = express();
+const start = Date.now();
+// run query
+const actualDuration = Date.now() - start;
 
 /* ===================== CORS ===================== */
 app.use(cors({
@@ -54,9 +57,13 @@ io.on("connection", (socket) => {
       const result = await pool.query(query);
 
       socket.emit("queryComplete", {
-        plan: explain.rows.map(r => r["QUERY PLAN"]).join("\n"),
-        rows: result.rows,
-        duration: explain.rows.at(-1)?.["QUERY PLAN"] || "N/A"
+        duration: actualDuration,   // ✅ MUST be a number
+        plan,
+        analysis,
+        suggestions,
+        planTree,
+        explanation,
+        indexConfidence
       });
 
     } catch (err) {
