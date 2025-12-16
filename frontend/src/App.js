@@ -7,7 +7,7 @@ import {
 import io from "socket.io-client";
 import { Copy, AlertTriangle, Moon, Sun, Sparkles, Zap, CheckCircle } from "lucide-react";
 
-const SOCKET_URL = "http://localhost:4000";
+const SOCKET_URL = process.env.REACT_APP_BACKEND_URL;
 
 function TreeNode({ node }) {
   if (!node || !node.children || node.children.length === 0) {

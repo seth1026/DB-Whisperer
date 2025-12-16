@@ -1,150 +1,197 @@
-// backend/server.js → FINAL MERGED – Real Metrics + One-Click Index + All Your Smart Features
-require('dotenv').config();
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-const { Pool } = require('pg');
-const os = require('os');
+// backend/server.js
+require("dotenv").config();
+
+const express = require("express");
+const http = require("http");
+const cors = require("cors");
+const { Server } = require("socket.io");
+const { Pool } = require("pg");
+const os = require("os");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
 
-const pool = new Pool({
-  user: process.env.PGUSER || 'postgres',
-  host: process.env.PGHOST || 'localhost',
-  database: process.env.PGDATABASE || 'perfdb',
-  password: process.env.PGPASSWORD || 'postgres',
-  port: process.env.PGPORT ? Number(process.env.PGPORT) : 5432,
+/* ===================== CORS (CRITICAL) ===================== */
+const allowedOrigins = [
+  "http://localhost:3000",
+  "https://your-frontend.vercel.app" // <-- replace later
+];
+
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true
+}));
+
+/* ===================== SOCKET.IO ===================== */
+const io = new Server(server, {
+  cors: {
+    origin: allowedOrigins,
+    credentials: true
+  }
 });
 
-/* ===================== REAL SYSTEM METRICS (CPU + RAM) ===================== */
+/* ===================== POSTGRES ===================== */
+const pool = new Pool({
+  host: process.env.PGHOST,
+  user: process.env.PGUSER,
+  password: process.env.PGPASSWORD,
+  database: process.env.PGDATABASE,
+  port: Number(process.env.PGPORT),
+  ssl: { rejectUnauthorized: false }
+});
+
+/* ===================== HEALTH CHECK ===================== */
+app.get("/", (req, res) => {
+  res.send("Backend is running");
+});
+
+/* ===================== REAL SYSTEM METRICS ===================== */
 let lastCpuInfo = os.cpus().map(cpu => ({ ...cpu.times }));
-let lastTime = Date.now();
 
 setInterval(() => {
   const cpus = os.cpus();
-  const now = Date.now();
-  const deltaTime = now - lastTime;
-  lastTime = now;
-
   let cpuPercent = 0;
-  for (let i = 0; i < cpus.length; i++) {
+
+  cpus.forEach((cpu, i) => {
     const prev = lastCpuInfo[i];
-    const curr = cpus[i].times;
+    const curr = cpu.times;
     const prevTotal = Object.values(prev).reduce((a, b) => a + b, 0);
     const currTotal = Object.values(curr).reduce((a, b) => a + b, 0);
     const totalDiff = currTotal - prevTotal;
     const idleDiff = curr.idle - prev.idle;
     cpuPercent += totalDiff > 0 ? 100 * (1 - idleDiff / totalDiff) : 0;
-  }
+  });
+
   cpuPercent /= cpus.length;
+  lastCpuInfo = cpus.map(c => ({ ...c.times }));
 
-  const ramPercent = ((os.totalmem() - os.freemem()) / os.totalmem()) * 100;
+  const ramPercent =
+    ((os.totalmem() - os.freemem()) / os.totalmem()) * 100;
 
-  // Approximate I/O (you can enhance with pg_stat_io later)
-  const ioApprox = Math.random() * 40 + 10;
-
-  io.emit('metrics', {
+  io.emit("metrics", {
     timestamp: Date.now(),
     cpu: Math.round(cpuPercent),
     ram: Math.round(ramPercent),
-    io: Math.round(ioApprox),
-    latency: 0,
+    io: Math.round(Math.random() * 40 + 10),
+    latency: 0
   });
-
-  lastCpuInfo = cpus.map(c => ({ ...c.times }));
 }, 500);
 
-/* ===================== ALL YOUR SMART FUNCTIONS (unchanged + improved) ===================== */
-function suggestIndexes(plan, query) {
-  const suggestions = [];
-  const lowerPlan = (plan || '').toLowerCase();
-  const lowerQuery = (query || '').toLowerCase();
+/* ===================== HELPERS ===================== */
+function analyzePlan(plan, duration) {
+  let score = 100;
+  if (plan.toLowerCase().includes("seq scan")) score -= 40;
+  if (duration > 1000) score -= 30;
+  if (duration > 2000) score -= 20;
 
-  if (lowerPlan.includes("seq scan")) {
-    const match = lowerQuery.match(/where  WHERE\s+([a-z_][a-z0-9_]*)\s*=/i);
-    if (match) {
-      const col = match[1];
-      suggestions.push(`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_${col} ON sales(${col});`);
-    }
-  }
-  if (lowerQuery.includes(`like '%`)) {
-    suggestions.push("CREATE INDEX idx_sales_product_fts ON sales USING GIN(to_tsvector('english', product_name));");
-  }
-  return suggestions.length ? suggestions : ['No strong index suggestion detected'];
+  return {
+    score: Math.max(score, 0),
+    verdict:
+      score > 80 ? "Excellent" :
+      score > 60 ? "Good" :
+      score > 40 ? "Slow" : "Very Slow"
+  };
 }
 
-// keep all your other functions exactly as you wrote them (analyzePlan, parsePlanToTree, etc.)
-// ... [paste your analyzePlan, parsePlanToTree, makeExplanation, computeIndexConfidence here] ...
+function suggestIndexes(plan, query) {
+  const suggestions = [];
+  if (plan.toLowerCase().includes("seq scan")) {
+    const match = query.match(/where\s+([a-z_]+)/i);
+    if (match) {
+      suggestions.push(
+        `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_${match[1]} ON sales(${match[1]});`
+      );
+    }
+  }
+  return suggestions.length ? suggestions : ["No strong index suggestion detected"];
+}
 
-/* ===================== SOCKET HANDLER ===================== */
-io.on('connection', (socket) => {
-  console.log('Client connected');
+function parsePlanToTree(plan) {
+  return plan.split("\n").map(line => ({ text: line }));
+}
 
-  socket.on("runQuery", async ({ query: userQuery = "", mode = "normal" }) => {
+function makeExplanation(plan, analysis, suggestions, duration) {
+  if (analysis.score > 80)
+    return "PostgreSQL used an efficient execution plan with indexes.";
+  if (plan.toLowerCase().includes("seq scan"))
+    return "PostgreSQL scanned the entire table, which is slow. Adding an index can help.";
+  return "Query performance can be improved with indexing.";
+}
+
+function computeIndexConfidence(plan, duration) {
+  if (plan.toLowerCase().includes("seq scan") && duration > 500) return 85;
+  if (duration > 1000) return 60;
+  return 30;
+}
+
+/* ===================== SOCKET HANDLERS ===================== */
+io.on("connection", (socket) => {
+  console.log("Socket connected:", socket.id);
+
+  socket.on("runQuery", async ({ query }) => {
     let interval;
     const start = Date.now();
 
     try {
-      const query = userQuery.trim();
-      if (!query || !/^SELECT\s/i.test(query)) {
-        socket.emit("error", "Only SELECT queries allowed!");
+      if (!query || !/^select/i.test(query.trim())) {
+        socket.emit("error", "Only SELECT queries are allowed");
         return;
       }
 
-      // streaming latency
+      // Force correct schema
+      await pool.query("SET search_path TO public");
+
       interval = setInterval(() => {
-        socket.emit('metrics', { latency: Date.now() - start });
+        socket.emit("metrics", { latency: Date.now() - start });
       }, 100);
 
-      const explainRes = await pool.query(`EXPLAIN (ANALYZE, BUFFERS, VERBOSE) ${query}`);
+      const explainRes = await pool.query(
+        `EXPLAIN (ANALYZE, BUFFERS, VERBOSE) ${query}`
+      );
+
       const plan = explainRes.rows.map(r => r["QUERY PLAN"]).join("\n");
 
-      const queryStart = Date.now();
+      const qStart = Date.now();
       await pool.query(query);
-      const actualDuration = Date.now() - queryStart;
+      const duration = Date.now() - qStart;
 
       clearInterval(interval);
 
-      const analysis = analyzePlan(plan, actualDuration);
-      const suggestions = suggestIndexes(plan, query);
-      const planTree = parsePlanToTree(plan);
-      const explanation = makeExplanation(plan, analysis, suggestions, actualDuration);
-      const indexConfidence = computeIndexConfidence(plan, suggestions, actualDuration);
+      const analysis = analyzePlan(plan, duration);
 
       socket.emit("queryComplete", {
-        mode,
-        duration: actualDuration,
+        duration,
         plan,
         analysis,
-        suggestions,
-        planTree,
-        explanation,
-        indexConfidence,
+        suggestions: suggestIndexes(plan, query),
+        planTree: parsePlanToTree(plan),
+        explanation: makeExplanation(plan, analysis, duration),
+        indexConfidence: computeIndexConfidence(plan, duration)
       });
+
     } catch (err) {
       clearInterval(interval);
-      socket.emit("error", err.message || "Query failed");
+      console.error("QUERY ERROR:", err);
+      socket.emit("error", err.message);
     }
   });
 
-  // ====== ONE-CLICK INDEX APPLY ======
-  socket.on('applyIndex', async ({ sql }) => {
+  socket.on("applyIndex", async ({ sql }) => {
     try {
-      let safeSql = sql.trim();
-      safeSql = safeSql
-        .replace(/^CREATE INDEX/i, 'CREATE INDEX CONCURRENTLY IF NOT EXISTS')
-        .replace(/^CREATE INDEX CONCURRENTLY IF NOT EXISTS CONCURRENTLY/i, 'CREATE INDEX CONCURRENTLY IF NOT EXISTS');
-
+      const safeSql = sql
+        .replace(/^CREATE INDEX/i, "CREATE INDEX CONCURRENTLY IF NOT EXISTS");
       await pool.query(safeSql);
-      socket.emit('indexCreated', { message: 'Index created successfully!' });
+      socket.emit("indexCreated", { message: "Index created successfully" });
     } catch (err) {
-      socket.emit('error', 'Index creation failed: ' + err.message);
+      console.error("INDEX ERROR:", err);
+      socket.emit("error", err.message);
     }
   });
 });
 
-server.listen(process.env.PORT || 4000, () => {
-  console.log(`Backend running on http://localhost:${process.env.PORT || 4000}`);
+/* ===================== START SERVER ===================== */
+const PORT = process.env.PORT || 8080;
+
+server.listen(PORT, () => {
+  console.log(`Backend running on http://localhost:${PORT}`);
 });
