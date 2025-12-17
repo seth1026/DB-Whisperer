@@ -1,4 +1,4 @@
-// src/App.js - DB-Whisperer ULTIMATE FINAL (with Super Friendly Explanation)
+// src/App.js - DB-Whisperer ULTIMATE FINAL (Original Style + Fixed Socket URL)
 
 import React, { useState, useEffect, useRef } from "react";
 import {
@@ -7,7 +7,9 @@ import {
 import io from "socket.io-client";
 import { Copy, AlertTriangle, Moon, Sun, Sparkles, Zap, CheckCircle } from "lucide-react";
 
-const SOCKET_URL = process.env.REACT_APP_BACKEND_URL;
+// Smart socket URL handling
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:4000";
+const SOCKET_URL = BACKEND_URL.replace(/^http/, "ws").replace(/^https/, "wss");
 
 function TreeNode({ node }) {
   if (!node || !node.children || node.children.length === 0) {
@@ -53,7 +55,9 @@ export default function App() {
 
     const socket = io(SOCKET_URL, {
       auth: { token: localStorage.getItem("jwt") },
+      transports: ["websocket", "polling"],
     });
+
     socketRef.current = socket;
 
     socket.on("metrics", (data) => {
@@ -144,7 +148,6 @@ export default function App() {
                 placeholder="SELECT * FROM sales WHERE category_id = 42;"
                 className="w-full h-48 p-6 font-mono text-lg bg-black/70 text-green-400 rounded-2xl focus:ring-4 focus:ring-purple-600 outline-none resize-none"
               />
-
               {/* Bad Practice Warnings */}
               {customQuery.includes("SELECT *") && (
                 <div className="mt-4 p-4 bg-red-100 dark:bg-red-900/60 rounded-xl flex items-center gap-3 text-red-700 dark:text-red-300">
@@ -158,7 +161,6 @@ export default function App() {
                   <span className="font-semibold">Leading % prevents index usage</span>
                 </div>
               )}
-
               <div className="flex gap-4 mt-8">
                 <button
                   onClick={runQuery}
@@ -169,7 +171,6 @@ export default function App() {
                   {isRunning ? "Analyzing..." : "Run & Analyze"}
                 </button>
               </div>
-
               <div className="grid grid-cols-2 gap-4 mt-6">
                 <button onClick={() => setCustomQuery("SELECT * FROM sales WHERE product_name LIKE '%Laptop%'")} className="py-3 bg-red-500/20 text-red-700 rounded-xl font-semibold hover:bg-red-500/30 transition">
                   Load Slow Query
@@ -180,13 +181,12 @@ export default function App() {
               </div>
             </div>
 
-            {/* USER-FRIENDLY EXPLANATION SECTION */}
+            {/* USER-FRIENDLY EXPLANATION SECTION - KEPT EXACTLY AS YOU HAD IT */}
             {result && (
               <div className="bg-white/80 dark:bg-gray-900/90 backdrop-blur-xl rounded-3xl p-10 shadow-2xl space-y-10">
                 <h3 className="text-5xl font-black bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent text-center">
                   What Just Happened? (In Plain English)
                 </h3>
-
                 {/* Duration Card */}
                 <div className="flex items-center gap-8 p-8 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-3xl text-white shadow-xl">
                   <Zap className="w-20 h-20" />
@@ -200,7 +200,6 @@ export default function App() {
                     </p>
                   </div>
                 </div>
-
                 {/* Overall Verdict */}
                 <div className={`p-10 rounded-3xl text-white text-center shadow-xl ${
                   result.analysis.score > 80 ? 'bg-gradient-to-r from-green-500 to-emerald-600' :
@@ -211,13 +210,11 @@ export default function App() {
                   <p className="text-9xl font-black mt-6">{result.analysis.verdict}</p>
                   <p className="text-5xl mt-6">Score: {result.analysis.score}/100</p>
                 </div>
-
                 {/* Step-by-Step Breakdown */}
                 <div className="space-y-8">
                   <h4 className="text-3xl font-bold flex items-center gap-4">
                     <Sparkles className="w-10 h-10 text-yellow-500" /> Step-by-Step Breakdown
                   </h4>
-
                   {/* Sequential Scan */}
                   {result.plan.toLowerCase().includes('seq scan') && (
                     <div className="p-8 bg-red-100 dark:bg-red-900/60 rounded-3xl border-4 border-red-500">
@@ -226,7 +223,6 @@ export default function App() {
                       <p className="text-lg mt-4 opacity-80 italic">Imagine reading an entire phone book to find one name — very slow! 📖</p>
                     </div>
                   )}
-
                   {/* Index Scan */}
                   {result.plan.toLowerCase().includes('index scan') && (
                     <div className="p-8 bg-green-100 dark:bg-green-900/60 rounded-3xl border-4 border-green-500">
@@ -235,7 +231,6 @@ export default function App() {
                       <p className="text-lg mt-4 opacity-80 italic">Like having an alphabetical index at the back of the phone book — instant lookup! 📖→🔍</p>
                     </div>
                   )}
-
                   {/* Materialized View */}
                   {result.plan.toLowerCase().includes('materialized view') && (
                     <div className="p-8 bg-purple-100 dark:bg-purple-900/60 rounded-3xl border-4 border-purple-500">
@@ -244,7 +239,6 @@ export default function App() {
                       <p className="text-lg mt-4 opacity-80 italic">Like having the answer already written down on a sticky note. Nuclear-level optimization! 💥</p>
                     </div>
                   )}
-
                   {/* Filter Warning */}
                   {result.plan.toLowerCase().includes('filter') && !result.plan.toLowerCase().includes('index scan') && (
                     <div className="p-8 bg-orange-100 dark:bg-orange-900/60 rounded-3xl border-4 border-orange-500">
@@ -253,10 +247,9 @@ export default function App() {
                       <p className="text-lg mt-4 opacity-80 italic">This usually means your WHERE condition can't use an index efficiently.</p>
                     </div>
                   )}
-
                   {/* Perfect Execution */}
-                  {!result.plan.toLowerCase().includes('seq scan') && 
-                   !result.plan.toLowerCase().includes('filter') && 
+                  {!result.plan.toLowerCase().includes('seq scan') &&
+                   !result.plan.toLowerCase().includes('filter') &&
                    result.analysis.score > 80 && (
                     <div className="p-10 bg-gradient-to-r from-green-500 to-emerald-600 rounded-3xl text-white text-center shadow-2xl">
                       <CheckCircle className="w-32 h-32 mx-auto mb-6" />
@@ -265,20 +258,18 @@ export default function App() {
                     </div>
                   )}
                 </div>
-
                 {/* Natural Language Summary */}
                 <div className="p-8 bg-gray-100 dark:bg-gray-800 rounded-3xl border-4 border-gray-400">
                   <p className="text-2xl italic leading-relaxed text-gray-700 dark:text-gray-300 text-center font-medium">
                     "{result.explanation}"
                   </p>
                 </div>
-
                 {/* Confidence Meter */}
                 <div className="p-8 bg-gradient-to-r from-cyan-500 to-blue-600 rounded-3xl text-white text-center shadow-2xl">
                   <p className="text-3xl font-bold mb-6">How confident are we that adding an index will help?</p>
                   <div className="text-9xl font-black">{result.indexConfidence}%</div>
                   <div className="mt-8 bg-white/30 rounded-full h-16 overflow-hidden shadow-inner">
-                    <div 
+                    <div
                       className="h-full bg-white transition-all duration-2000 ease-out rounded-full"
                       style={{ width: `${result.indexConfidence}%` }}
                     />
@@ -330,7 +321,6 @@ export default function App() {
                   <Line type="monotone" dataKey="ram" stroke="#8b5cf6" name="RAM %" strokeWidth={4} dot={false} />
                   <Line type="monotone" dataKey="io" stroke="#ef4444" name="I/O" strokeWidth={4} dot={false} />
                   <Line type="monotone" dataKey="latency" stroke="#10b981" name="Latency (ms)" strokeWidth={4} dot={false} />
-
                   {compareMode && afterMetrics.length > 0 && (
                     <>
                       <Line data={afterMetrics} dataKey="cpu" stroke="#f59e0b" name="CPU (After)" strokeWidth={4} strokeDasharray="10 5" dot={false} />
